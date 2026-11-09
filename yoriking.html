@@ -302,6 +302,7 @@ table.sum td:last-child{text-align:right}
 .skl .skf{position:absolute;left:0;right:0;bottom:0;background:rgba(58,36,48,.45);z-index:1}
 .skl.lock{filter:grayscale(1);opacity:.6}.skl.ok{box-shadow:inset 0 0 0 2px #ffe066}
 .vnPort.talk img{animation:vnTalk .28s infinite}@keyframes vnTalk{50%{transform:translateY(-4px)}}
+.cutBar{display:flex;align-items:center;gap:14px;justify-content:center;margin:2px 0 4px}.cutBar .ck{width:40px;height:40px;font-size:20px}.cutBar .ck.wide{width:70px;font-size:15px}.cutBar .cmdSeq{margin:0}.cutBar .mgsub{margin:0;max-width:300px;font-size:13px}.cutCnt{align-self:center;margin-left:8px;font-size:16px;color:#3a2430}
 .tcredit{position:absolute;left:12px;bottom:8px;font-size:12px;color:#3a2430;background:rgba(255,255,255,.75);border:2px solid #3a2430;padding:2px 8px;z-index:2}
 @keyframes lb{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-14px) rotate(3deg)}}
 .tlogo small{display:inline-block;font-size:24px;background:#fff;color:var(--pink);border:4px solid #5a1840;padding:4px 10px;text-shadow:none;vertical-align:top;transform:rotate(-10deg);margin-left:6px;letter-spacing:0}
@@ -356,7 +357,7 @@ table.sum td:last-child{text-align:right}
    선생님이 교육과정을 입력하면 이 블록만 바꾸면 됩니다.
    ===================================================================== */
 const CONTENT = {
-  version: '5·6학년 실과 교과서(이춘식) 식생활 단원 반영 v1.6.1',
+  version: '5·6학년 실과 교과서(이춘식) 식생활 단원 반영 v1.7',
   /* 식품 구성 자전거 여섯 가지 식품군 (5학년 교과서) */
   foodGroups: {
     grain:{name:'곡류'}, protein:{name:'고기·생선·달걀·콩류'}, veg:{name:'채소류'},
@@ -1211,41 +1212,55 @@ function mgTap(){
 
 /* 칼질 : 칼이 점선에 올 때 Space */
 const CUT_INFO={julienne:{n:6,name:'채썰기',how:'가늘고 길게 썰어요'},diagonal:{n:4,name:'어슷썰기',how:'비스듬하게 썰어요'},dice:{n:7,name:'잘게 썰기',how:'작게 송송 썰어요'}};
+/* ----- 칼질 : 썰기 방법마다 다른 키 리듬 (방향키·WASD + Space) ----- */
+const CUT_SEQ={julienne:[3,4],diagonal:[0,3,4],dice:[3,4,4]};
+const CUT_HELP={julienne:'<b>←</b>(A)로 칼을 옮기고 <b>Space</b>로 썰기! 가늘고 길게',diagonal:'<b>↑</b>(W)로 칼을 비스듬히 세우고 <b>←</b>(A)로 옮긴 뒤 <b>Space</b>! 비스듬하게',dice:'<b>←</b>(A)로 옮기고 <b>Space Space</b> 톡톡! 작게 송송'};
 function openCut(st){
-  const info=CUT_INFO[st.style]||CUT_INFO.dice, W=560, H=170, sc=9, iw=12*sc, ix=Math.round(W/2-iw/2)+30, iy=50;
-  const cfg={kind:'cut',title:st.label,tip:CONTENT.tips.knife,icon:spriteURL(IC.knife,2,'knife'),st,info,W,H,sc,ix,iy,iw,lines:[],kx:40,dir:1,
-    speed:st.style==='dice'?190:160,tol:lvl('knife')?17:12,miss:0,flash:0,chop:0,img:ingIcon(st)};
-  for(let i=0;i<info.n;i++) cfg.lines.push({x:Math.round(ix+iw*(i+1)/(info.n+1)),cut:false});
-  openMG(cfg,`<div class="mgsub"><b>${info.name}</b>: ${info.how} — 칼이 <b style="color:#2e8a3e">초록 점선</b> 위에 올 때 <kbd>Space</kbd>!</div>${mgCanvas(W,H)}<div class="mgsub" id="mgInfo">왼손은 고양이 손! 식품을 잡은 손가락을 안으로 구부려요.</div>`,true);
-  cfg.cv=$('#mgCv'); cfg.tick=dt=>{ cfg.kx+=cfg.dir*cfg.speed*dt; if(cfg.kx>W-30){cfg.kx=W-30;cfg.dir=-1;} if(cfg.kx<cfg.ix-30){cfg.kx=cfg.ix-30;cfg.dir=1;} cfg.flash=Math.max(0,cfg.flash-dt); cfg.chop=Math.max(0,cfg.chop-dt); cutDraw(cfg); };
-  cfg.cv.addEventListener('pointerdown',e=>{e.preventDefault(); cutHit();});
-  cutDraw(cfg);
+  const style=CUT_INFO[st.style]?st.style:'dice', info=CUT_INFO[style], W=560, H=150, sc=9, iw=12*sc, ix=Math.round(W/2-iw/2)+30, iy=40, seq=CUT_SEQ[style];
+  const cfg={kind:'cut',title:st.label,tip:CONTENT.tips.knife,icon:spriteURL(IC.knife,2,'knife'),st,style,info,W,H,sc,ix,iy,iw,lines:[],seq,pos:0,cur:0,
+    kx:ix+iw+26,tx:ix+iw+26,tilt:0,miss:0,flash:0,chop:0,img:ingIcon(st),t:0};
+  for(let i=info.n;i>=1;i--) cfg.lines.push({x:Math.round(ix+iw*i/(info.n+1)),cut:false});
+  openMG(cfg,`<div class="mgsub"><b>${info.name}</b>: ${CUT_HELP[style]}</div>
+    <div class="cutBar"><div class="cmdSeq" id="cutSeq"></div><div class="mgsub" id="mgInfo">왼손은 고양이 손!</div></div>${mgCanvas(W,H)}`,true);
+  cfg.cv=$('#mgCv'); cfg.cv.addEventListener('pointerdown',e=>{ e.preventDefault(); cutKey(cfg.seq[cfg.pos]); });
+  cfg.tick=dt=>{ cfg.t+=dt; cfg.kx+=(cfg.tx-cfg.kx)*Math.min(1,dt*18); cfg.flash=Math.max(0,cfg.flash-dt); cfg.chop=Math.max(0,cfg.chop-dt); if(cfg.done){ cfg.done-=dt; if(cfg.done<=0){ closeMG(); completeStep(); return; } } cutDraw(cfg); };
+  cutRender(cfg); cutDraw(cfg);
 }
+function cutRender(c){ const el=$('#cutSeq'); if(!el) return;
+  el.innerHTML=c.seq.map((k,i)=>`<span class="ck ${i<c.pos?'ok':i===c.pos?'cur':''} ${k===4?'wide':''}">${CMD_KEYS[k][2]}</span>`).join('')+`<span class="cutCnt">${c.cur} / ${c.lines.length}</span>`; }
+function lineX(c,l){ const cuts=c.lines.filter(v=>v.cut).map(v=>v.x); return l.x+cuts.filter(v=>v<l.x).length*5; }
+function cutKey(k){
+  const c=R&&R.mg; if(!c||c.kind!=='cut'||R.paused||c.done) return;
+  if(k!==c.seq[c.pos]){ c.miss++; c.flash=0.3; SFX.bad(); const cur=document.querySelector('#cutSeq .ck.cur'); if(cur){ cur.classList.remove('shake'); void cur.offsetWidth; cur.classList.add('shake'); }
+    $('#mgInfo').innerHTML='<b style="color:#c02838">삐끗!</b> 순서대로 천천히! 식품을 잡은 손가락은 안으로 구부려요.'; learnTip(CONTENT.tips.knife); return; }
+  const line=c.lines[c.cur];
+  if(k===0){ c.tilt=1; SFX.pop(); }
+  else if(k===3){ c.tx=lineX(c,line); SFX.pop(); }
+  else if(k===4){ c.chop=0.12; SFX.tap(); R.me.hop=0.1;
+    const last=c.seq.lastIndexOf(4);
+    if(c.pos===last){ line.cut=true; c.cur++; c.tilt=0; } }
+  c.pos++;
+  if(c.pos>=c.seq.length){ c.pos=0; if(c.cur>=c.lines.length){ c.done=0.45; if(c.miss===0){ R.active.perfect=true; toast(`${c.info.name} 완벽해요! (손님 만족 UP)`,'good'); } else toast(`${c.info.name} 완성!`,'good'); SFX.ok(); } }
+  cutRender(c);
+}
+function cutHit(){ const c=R&&R.mg; if(c&&c.kind==='cut') cutKey(4); }
 function cutDraw(c){
   const x=px2(c.cv); x.clearRect(0,0,c.W,c.H);
-  // 도마
   x.fillStyle='#3a2430'; x.fillRect(20,28,c.W-40,c.H-36); x.fillStyle='#c97d5d'; x.fillRect(24,32,c.W-48,c.H-44); x.fillStyle='#a8604a'; x.fillRect(c.W-40,32,16,c.H-44); x.fillStyle='#e8c0b0'; x.fillRect(40,62,10,50); x.fillStyle='#3a2430'; x.fillRect(38,60,14,2); x.fillRect(38,112,14,2);
-  // 고양이 손
   blit(x,IC.hand,c.ix-62,c.iy+14,5);
-  // 재료 (썬 조각은 조금씩 벌어짐)
-  const cuts=c.lines.filter(l=>l.cut).map(l=>l.x).sort((a,b)=>a-b), edges=[c.ix,...cuts,c.ix+c.iw];
-  for(let i=0;i<edges.length-1;i++){ const a=edges[i], b=edges[i+1], off=i*5; x.save(); x.beginPath(); x.rect(a,0,b-a,c.H); x.clip(); blit(x,c.img,c.ix+off,c.iy,c.sc); x.restore(); }
-  // 점선
-  const near=c.lines.filter(l=>!l.cut).reduce((m,l)=>Math.abs(l.x-c.kx)<Math.abs((m?m.x:1e9)-c.kx)?l:m,null);
-  c.lines.forEach((l,i)=>{ if(l.cut) return; const ok=l===near&&Math.abs(l.x-c.kx)<=c.tol; x.fillStyle=ok?'#2e8a3e':'#ffffff';
-    const off=cuts.filter(v=>v<l.x).length*5; for(let y=c.iy-8;y<c.iy+c.iw+6;y+=8){ const sl=c.info===CUT_INFO.diagonal?(y-c.iy)*0.35:0; x.fillRect(l.x+off+sl-1,y,3,5); } });
-  // 칼 (칼날이 아래로)
-  const ky=c.iy-46+(c.chop>0?16:0); x.save(); x.translate(Math.round(c.kx),ky+84); x.scale(1,-1); blit(x,IC.knife,-20,0,4); x.restore();
+  const cuts=c.lines.filter(l=>l.cut).map(l=>l.x).sort((a,b)=>a-b), edges=[c.ix,...cuts,c.ix+c.iw], diag=c.style==='diagonal';
+  for(let i=0;i<edges.length-1;i++){ const a=edges[i], b=edges[i+1], off=i*5; x.save(); x.beginPath();
+    if(diag){ const s=c.iw*0.35; x.moveTo(a+off,c.iy-8); x.lineTo(b+off,c.iy-8); x.lineTo(b+off+s,c.iy+c.iw+6); x.lineTo(a+off+s,c.iy+c.iw+6); x.closePath(); } else x.rect(a+off,0,b-a,c.H);
+    x.clip(); blit(x,c.img,c.ix+off,c.iy,c.sc); x.restore(); }
+  const next=c.lines[c.cur];
+  c.lines.forEach(l=>{ if(l.cut) return; const lx=lineX(c,l), isN=l===next; x.fillStyle=isN?'#2e8a3e':'rgba(255,255,255,.7)';
+    for(let y=c.iy-8;y<c.iy+c.iw+6;y+=8){ const sl=diag?(y-c.iy)*0.35:0; x.fillRect(lx+sl-1,y,isN?3:2,5); } });
+  // 칼
+  const ky=c.iy-46+(c.chop>0?16:0); x.save(); x.translate(Math.round(c.kx),ky+84); if(c.tilt) x.rotate(-0.33); x.scale(1,-1); blit(x,IC.knife,-20,0,4); x.restore();
   if(c.flash>0){ x.fillStyle='rgba(255,48,80,'+(c.flash*2)+')'; x.fillRect(0,0,c.W,c.H); }
-  x.fillStyle='#3a2430'; x.font='10px Galmuri9'; x.fillText(`${c.lines.filter(l=>l.cut).length} / ${c.lines.length}`,c.W-70,20);
+  if(c.done){ const k=Math.floor(c.t*12)%2; x.fillStyle='#ffe066'; [[c.ix-14,c.iy],[c.ix+c.iw+30,c.iy+30],[c.ix+c.iw/2,c.iy-18]].forEach(([sx,sy],i)=>{ const r=(i+k)%2?8:5; x.fillRect(sx-r,sy,2*r+1,3); x.fillRect(sx,sy-r,3,2*r+1); }); }
 }
-function cutHit(){
-  const c=R&&R.mg; if(!c||c.kind!=='cut'||R.paused) return; c.chop=0.1;
-  const cuts=c.lines.filter(l=>l.cut).map(l=>l.x);
-  let best=null,bd=1e9; c.lines.forEach(l=>{ if(l.cut) return; const off=cuts.filter(v=>v<l.x).length*5, d=Math.abs(l.x+off-c.kx); if(d<bd){bd=d;best=l;} });
-  if(best&&bd<=c.tol){ best.cut=true; SFX.tap(); if(c.lines.every(l=>l.cut)){ if(c.miss===0){ R.active.perfect=true; toast(`${c.info.name} 완벽해요! (손님 만족 UP)`,'good'); } else toast(`${c.info.name} 완성!`,'good'); closeMG(); completeStep(); } }
-  else { c.miss++; c.flash=0.35; SFX.bad(); $('#mgInfo').innerHTML='<b style="color:#c02838">삐끗!</b> 천천히, 점선에 맞춰요. 식품을 잡은 손가락은 안으로 구부려요!'; learnTip(CONTENT.tips.knife); }
-}
+
 
 /* 찌기 · 삶기 · 부치기 : 알맞게 익었을 때 Space */
 const HEAT_TXT={
@@ -2081,7 +2096,7 @@ function marketBuy(i){ const m=MARKET[i]; if(!m) return; if(S.money<m.price){ to
 const freshBonus=()=>marketDone()?(S.market.local?6:-3):0;
 
 /* ----- 지도 위 표시 ----- */
-function drawUmbrella(c,y){ ctx.drawImage(IC.umbrella,Math.round(c.x-5),Math.round(y-28)); }
+function drawUmbrella(c,y){ ctx.drawImage(IC.umbrella,Math.round(c.x-5),Math.round(y-37)); }
 
 /* ===================== 튜토리얼 : 곰 사장님의 영업 연습 ===================== */
 const tutCust=()=>R.customers.find(c=>c.tut);
@@ -2583,6 +2598,8 @@ function addPart(type,x,y,txt){ R.parts.push({type,x,y,txt,t:0,life:type==='text
 
 /* ===================== 그리기 ===================== */
 function outline(x,y,w,h,col){ rr(ctx,x,y,w,1,col); rr(ctx,x,y+h-1,w,1,col); rr(ctx,x,y,1,h,col); rr(ctx,x+w-1,y,1,h,col); }
+function sprS(sp,x,y,s,alpha){ if(alpha!=null) ctx.globalAlpha=clamp(alpha,0,1); const w=sp.width*s, h=sp.height*s; ctx.drawImage(sp,Math.round((x-w/2)*2)/2,Math.round((y-h+1)*2)/2,w,h); ctx.globalAlpha=1; }
+const CS=1.5;
 function spr(sp,x,y,alpha){ if(alpha!=null) ctx.globalAlpha=clamp(alpha,0,1); ctx.drawImage(sp,Math.round(x-sp.width/2),Math.round(y-sp.height+1)); ctx.globalAlpha=1; }
 function draw(time){
   ctx.setTransform(2,0,0,2,0,0); ctx.imageSmoothingEnabled=false;
@@ -2622,11 +2639,11 @@ function draw(time){
   R.tables.forEach((t,i)=>{ ents.push({y:t.y-14,f:()=>{ box(ctx,t.x-8,t.y-22,16,12,'#e8404e'); rr(ctx,t.x-6,t.y-20,12,3,'#ff7a88'); }}); ents.push({y:t.y+8,f:()=>drawTable(t,i,blink)}); });
   ents.push({y:84,f:drawCounter}); ents.push({y:WATER.y+WATER.h,f:()=>xDrawObjects(time,blink)}); ents.push({y:VEND.y+VEND.h,f:()=>xDrawVend(time,blink)}); ents.push({y:SMOO.y+SMOO.h,f:()=>xDrawSmoo(time,blink)});
   R.customers.forEach(c=>ents.push({y:c.y,f:()=>drawCust(c,blink,time,bubbles)}));
-  if(hired('counter')) ents.push({y:58,f:()=>spr(albaSprite('counter',0),386,58+(Math.sin(time*4)>0.6?-1:0))});
-  if(hired('serve')){ const sv=R.server; ents.push({y:sv.y,f:()=>{ spr(albaSprite('serve',sv.state!=='idle'?Math.floor(sv.anim*6)%2:0),sv.x,sv.y); if(sv.dish) ctx.drawImage(IC[sv.dish.recipe],Math.round(sv.x-8),Math.round(sv.y-34)); }}); }
-  if(hired('dish')) ents.push({y:300,f:()=>spr(albaSprite('dish',Math.floor(time*4)%2),440,300)});
-  if(hired('drink')){ const dp=drinkAlbaPos(time); ents.push({y:dp.y,f:()=>spr(albaSprite('drink',Math.floor(time*3)%2),dp.x,dp.y)}); }
-  if(hired('clean')) ents.push({y:HALL_ALBA.y,f:()=>spr(albaSprite('clean',Math.floor(time*2)%2),HALL_ALBA.x+Math.sin(time*0.7)*30,HALL_ALBA.y)});
+  if(hired('counter')) ents.push({y:58,f:()=>sprS(albaSprite('counter',0),386,58+(Math.sin(time*4)>0.6?-1:0),CS)});
+  if(hired('serve')){ const sv=R.server; ents.push({y:sv.y,f:()=>{ sprS(albaSprite('serve',sv.state!=='idle'?Math.floor(sv.anim*6)%2:0),sv.x,sv.y,CS); if(sv.dish) ctx.drawImage(IC[sv.dish.recipe],Math.round(sv.x-8),Math.round(sv.y-44)); }}); }
+  if(hired('dish')) ents.push({y:300,f:()=>sprS(albaSprite('dish',Math.floor(time*4)%2),440,300,CS)});
+  if(hired('drink')){ const dp=drinkAlbaPos(time); ents.push({y:dp.y,f:()=>sprS(albaSprite('drink',Math.floor(time*3)%2),dp.x,dp.y,CS)}); }
+  if(hired('clean')) ents.push({y:HALL_ALBA.y,f:()=>sprS(albaSprite('clean',Math.floor(time*2)%2),HALL_ALBA.x+Math.sin(time*0.7)*30,HALL_ALBA.y,CS)});
   ents.push({y:R.me.y,f:drawHero});
   ents.sort((a,b)=>a.y-b.y).forEach(e=>e.f());
   drawBubble.placed=[]; R.bubLift=R.bubLift||{}; bubbles.sort((a,b)=>(b.still-a.still)||(a.key-b.key)).forEach(b=>drawBubble(b));
@@ -2665,12 +2682,12 @@ function drawTable(t,i,blink){
 }
 function drawCust(c,blink,time,bubbles){
   const fr=c.moving?Math.floor(c.anim*6)%2:0; let y=c.y; if(c.state==='eat') y-=(Math.floor(time*5)%2);
-  if(c.state==='bye'){ ctx.globalAlpha=clamp(c.op,0,1); rr(ctx,c.x+6,y-32,1,14,'#3a2430'); box(ctx,c.x+2,y-44,9,12,'#ff6fae'); rr(ctx,c.x+4,y-42,2,4,'#ffd0e4'); ctx.globalAlpha=1; }
-  else rr(ctx,c.x-6,c.y-1,12,2,'rgba(0,0,0,.15)');
-  spr(animal(c.sp,c.body,fr,c.acc||0),c.x,y,c.op); if(umbOf(c)) drawUmbrella(c,y);
-  if(canAccept(c,R.holding)&&blink) outline(c.x-10,y-19,20,21,'#ffcc00');
-  if(PAT_STATES.has(c.state)){ const f=clamp(c.pat/c.patMax,0,1); rr(ctx,c.x-9,y-22,18,4,'#3a2430'); rr(ctx,c.x-8,y-21,16*f,2,f>0.5?'#5ac85a':f>0.25?'#ffcc00':'#ff3050'); }
-  const b=bubbleOf(c,blink); if(b) bubbles.push({x:c.x,y:c.y-24,...b,alpha:c.op,key:c.id,still:!c.moving&&!c.path.length});
+  if(c.state==='bye'){ ctx.globalAlpha=clamp(c.op,0,1); rr(ctx,c.x+9,y-41,1,14,'#3a2430'); box(ctx,c.x+5,y-53,9,12,'#ff6fae'); rr(ctx,c.x+7,y-51,2,4,'#ffd0e4'); ctx.globalAlpha=1; }
+  else rr(ctx,c.x-9,c.y-1,18,2,'rgba(0,0,0,.15)');
+  sprS(animal(c.sp,c.body,fr,c.acc||0),c.x,y,CS,c.op); if(umbOf(c)) drawUmbrella(c,y);
+  if(canAccept(c,R.holding)&&blink) outline(c.x-14,y-28,28,30,'#ffcc00');
+  if(PAT_STATES.has(c.state)){ const f=clamp(c.pat/c.patMax,0,1); rr(ctx,c.x-9,y-31,18,4,'#3a2430'); rr(ctx,c.x-8,y-30,16*f,2,f>0.5?'#5ac85a':f>0.25?'#ffcc00':'#ff3050'); }
+  const b=bubbleOf(c,blink); if(b) bubbles.push({x:c.x,y:c.y-33,...b,alpha:c.op,key:c.id,still:!c.moving&&!c.path.length});
 }
 function bubbleOf(c,blink){
   if(c.kind==='quiz'){
@@ -2847,6 +2864,7 @@ addEventListener('keydown',e=>{
   }
   if(e.repeat&&k!=='ArrowUp'&&k!=='ArrowDown'&&k!=='ArrowLeft'&&k!=='ArrowRight') return;
   if(R.mg&&R.mg.kind==='pick'){ const n=+e.key; if(/^Digit\d$/.test(k)) pickToggle(R.mg.opts[n===0?9:n-1]); if(k==='Enter') pickConfirm(); if(k==='KeyX'||k==='Escape') closeMG(); return; }
+  if(R.mg&&R.mg.kind==='cut'){ const ci=CMD_KEYS.findIndex(q=>q[0]===k||q[1]===k); if(ci>=0){ e.preventDefault(); if(!e.repeat) cutKey(ci); } else if(k==='KeyX'||k==='Escape') closeMG(); return; }
   if(R.mg&&R.mg.kind==='trash'){ const n=+e.key; if(n>=1&&n<=3) trashPick(n-1); if(k==='Escape') closeMG(); return; }
   if(R.mg&&R.mg.kind==='manner'){ const n=+e.key; if(n>=1&&n<=2) mannerPick(n-1); if(k==='Escape'||k==='KeyX') closeMG(); return; }
   if(R.mg&&R.mg.kind==='vend'){ const n=+e.key; if(n>=1&&n<=5) vendToggle(n-1); if(k==='Enter') vendConfirm(); if(k==='KeyX'||k==='Escape') closeMG(); return; }
@@ -3044,6 +3062,7 @@ function howTo(back){
     ★ <b>음료 자판기</b>·<b>스무디 바</b>는 상점에서 들여요. 자판기는 몸에 좋은 음료로 채우고, 스무디는 재료(숫자키)를 넣고 Space로 갈아요!<br>
     ★ <b>분리배출</b>: 남긴 것이 있는 테이블을 치우면 음식물·일반·재활용 통에 나눠 버려요(숫자키). <b>식사 예절</b>: 「탕탕!」 같은 말풍선 손님에게 가서 Space로 바른 예절을 알려 줘요. <b>아침 장보기</b>: 준비 화면에서 지역 식품을 사면 손님 만족도가 올라요.<br>
     ★ <b>알바 키우기</b>: 준비 화면 알바 카드의 「키우기」! 함께 일한 날이 쌓이면 능력을 올릴 수 있어요. <b>마스터 모드</b>: 엔딩 뒤에도 계속 장사하며 마스터 별을 모아요.<br>
+    ★ <b>칼질</b>: 채썰기 <kbd>←</kbd><kbd>Space</kbd> · 어슷썰기 <kbd>↑</kbd><kbd>←</kbd><kbd>Space</kbd> · 잘게 썰기 <kbd>←</kbd><kbd>Space</kbd><kbd>Space</kbd> (WASD도 돼요).<br>
     ★ <b>콤보·피버</b>: 손님을 연속으로 만족시키면 콤보! 5콤보면 20초 동안 FEVER(팁 2배). <b>스킬</b>: <kbd>Shift</kbd> 대시(Lv.1) · <kbd>Q</kbd> 응원(Lv.3) · <kbd>R</kbd> 정리정돈(Lv.5).<br>
     9. <b>질문 손님</b>·<b>위생 점검관</b>의 문제를 맞히면(숫자키 1∼4) 명성과 돈이 올라요.
     <div style="margin-top:6px;color:#888">${CREDIT} · 실과 내용: 5·6학년 실과 교과서(이춘식) 식생활 단원 · 글꼴: 갈무리(SIL OFL)</div><div class="center" style="margin-top:8px"><button class="pbtn" id="bBack">알겠어요! (Enter)</button> <button class="pbtn small" id="bTut">${S.tutNext?'다음 영업에서 연습해요 ✓':'영업 연습(튜토리얼) 다시 하기'}</button></div></div></div>`);
